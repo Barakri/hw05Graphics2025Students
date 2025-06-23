@@ -176,8 +176,13 @@ let isOrbitEnabled = true;
 
 // Handle key events
 function handleKeyDown(e) {
-  if (e.key === "o") {
-    isOrbitEnabled = !isOrbitEnabled;
+  switch (e.key.toLowerCase()) {
+    case 'o':
+      isOrbitEnabled = !isOrbitEnabled;
+      break;
+    case 'f':
+      document.body.requestFullscreen();
+      break;
   }
 }
 
