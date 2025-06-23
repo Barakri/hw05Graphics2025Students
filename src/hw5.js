@@ -162,6 +162,14 @@ const cameraTranslate = new THREE.Matrix4();
 cameraTranslate.makeTranslation(0, 15, 30);
 camera.applyMatrix4(cameraTranslate);
 
+// Resize handler
+window.addEventListener('resize', onWindowResize);
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
 // Orbit controls
 const controls = new OrbitControls(camera, renderer.domElement);
 let isOrbitEnabled = true;
