@@ -188,6 +188,11 @@ function handleKeyDown(e) {
       const help = document.getElementById('controls-container');
       help.style.display = help.style.display === 'none' ? 'block' : 'none';
       break;
+    case 'r':
+      // reset camera to its original spot
+      camera.position.set(0, 15, 30);
+      controls.update();
+      break;
   }
 }
 
