@@ -183,6 +183,11 @@ function handleKeyDown(e) {
     case 'f':
       document.body.requestFullscreen();
       break;
+    case 'h':
+      // toggle help panel
+      const help = document.getElementById('controls-container');
+      help.style.display = help.style.display === 'none' ? 'block' : 'none';
+      break;
   }
 }
 
