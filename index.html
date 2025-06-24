@@ -1,49 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>HW5 - Basketball Court</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: Arial, sans-serif;
-    }
-
-    #score-container {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      color: white;
-      background-color: rgba(0, 0, 0, 0.6);
-      padding: 10px 15px;
-      border-radius: 8px;
-      font-size: 18px;
-    }
-
-    #controls-container {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      color: white;
-      background-color: rgba(0, 0, 0, 0.6);
-      padding: 10px 15px;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HW05 Basketball Court</title>
+  <!-- Link to custom CSS -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- Three.js library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-  <div id="score-container">Score: 0</div>
-  <div id="controls-container">
-    <h3>Controls:</h3>
-    <p>O - Toggle Orbit Camera</p>
-	<p>F - Fullscreen (esc to exit)</p>
-	<p>H - Toggle Controls Panel</p>
-	<p>R - Reset Camera</p>
-  </div>
+  <div id="webgl-container">
 
-  <script src="src/hw5.js" type="module"></script>
+    <div id="scoreboard-container">
+      <span id="team-a-score">0</span>&ndash;<span id="team-b-score">0</span>
+    </div>
+
+    <div id="controls-container">
+      <h3>Controls:</h3>
+      <p>O &ndash; Toggle Orbit Camera</p>
+      <p>F &ndash; Fullscreen (esc to exit)</p>
+      <p>H &ndash; Toggle Controls Panel</p>
+      <p>R &ndash; Reset Camera</p>
+    </div>
+
+    <!-- Three.js scene script -->
+    <script type="module" src="src/hw5.js"></script>
+  </div>
 </body>
 </html>

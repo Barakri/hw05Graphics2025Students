@@ -4,13 +4,11 @@ import {fileURLToPath} from 'url';
 
 
 const __filename = fileURLToPath(import.meta.url);
-
-// 👇️ "/home/john/Desktop/javascript"
 const __dirname = path.dirname(__filename);
 
 const app = express()
 const port = 8000
-
+app.use(express.static(__dirname));
 app.use("/src", express.static(__dirname + "/src"));
 app.use("/textures", express.static(__dirname + "/textures"));
 

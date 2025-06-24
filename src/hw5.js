@@ -11,7 +11,14 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+// append canvas into our webgl-container instead of document.body
+const container = document.getElementById('webgl-container');
+container.appendChild(renderer.domElement);
+// make sure it fills the container
+renderer.domElement.style.position = 'absolute';
+renderer.domElement.style.top = '0';
+renderer.domElement.style.left = '0';
+
 // Set background color
 scene.background = new THREE.Color(0x000000);
 
