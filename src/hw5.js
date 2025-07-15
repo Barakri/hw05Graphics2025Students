@@ -607,13 +607,28 @@ function animate() {
     basketball.position.x += ballVelocity.x * dt;
     basketball.position.y += ballVelocity.y * dt;
     basketball.position.z += ballVelocity.z * dt;
-    // Stop at ground
+    // Clamp to court boundaries
     const ballRadius = 0.24;
+    const minX = -15 + ballRadius;
+    const maxX =  15 - ballRadius;
+    const minZ = -7.5 + ballRadius;
+    const maxZ =  7.5 - ballRadius;
+    basketball.position.x = Math.max(minX, Math.min(maxX, basketball.position.x));
+    basketball.position.z = Math.max(minZ, Math.min(maxZ, basketball.position.z));
+    // Stop at ground or bounce
     const groundY = ballRadius + EPSILON;
     if (basketball.position.y <= groundY) {
       basketball.position.y = groundY;
-      ballInFlight = false;
-      ballVelocity.set(0, 0, 0);
+      // Bounce with energy loss
+      if (Math.abs(ballVelocity.y) > 0.8) { // threshold for bounce
+        ballVelocity.y = -ballVelocity.y * 0.7; // lose 30% energy
+        ballVelocity.x *= 0.95; // lose some horizontal energy
+        ballVelocity.z *= 0.95;
+      } else {
+        // Ball comes to rest
+        ballInFlight = false;
+        ballVelocity.set(0, 0, 0);
+      }
     }
   }
 
