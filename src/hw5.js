@@ -263,6 +263,9 @@ function createHoop(left) {
   scene.add(hoopGroup);
 }
 
+// Global basketball mesh reference
+let basketball;
+
 function createBasketball() {
   const basketballTexture = textureLoader.load('textures/basketball_texture.png');
 
@@ -274,7 +277,7 @@ function createBasketball() {
     specular: 0x222222
   });
 
-  const basketball = new THREE.Mesh(ballGeometry, ballMaterial);
+  basketball = new THREE.Mesh(ballGeometry, ballMaterial);
   basketball.position.set(0, ballRadius + EPSILON, 0);
   basketball.castShadow = true;
   scene.add(basketball);
@@ -347,23 +350,55 @@ let isOrbitEnabled = true;
 
 // Handle key events
 function handleKeyDown(e) {
-  switch (e.key.toLowerCase()) {
-    case 'o':
-      isOrbitEnabled = !isOrbitEnabled;
-      break;
-    case 'f':
-      document.body.requestFullscreen();
-      break;
-    case 'h':
-      // toggle help panel
-      const help = document.getElementById('controls-container');
-      help.style.display = help.style.display === 'none' ? 'block' : 'none';
-      break;
-    case 'r':
-      // reset camera to its original spot
-      camera.position.set(0, 15, 30);
-      controls.update();
-      break;
+  // Movement step size
+  const moveStep = 0.3;
+  // Court boundaries (court is 30x15, so halfX=15, halfZ=7.5, but keep ball inside)
+  const minX = -15 + 0.24; // ball radius
+  const maxX =  15 - 0.24;
+  const minZ = -7.5 + 0.24;
+  const maxZ =  7.5 - 0.24;
+
+  let moved = false;
+  if (basketball) {
+    switch (e.key) {
+      case 'ArrowLeft':
+        basketball.position.x = Math.max(minX, basketball.position.x - moveStep);
+        moved = true;
+        break;
+      case 'ArrowRight':
+        basketball.position.x = Math.min(maxX, basketball.position.x + moveStep);
+        moved = true;
+        break;
+      case 'ArrowUp':
+        basketball.position.z = Math.max(minZ, basketball.position.z - moveStep);
+        moved = true;
+        break;
+      case 'ArrowDown':
+        basketball.position.z = Math.min(maxZ, basketball.position.z + moveStep);
+        moved = true;
+        break;
+    }
+  }
+
+  if (!moved) {
+    switch (e.key.toLowerCase()) {
+      case 'o':
+        isOrbitEnabled = !isOrbitEnabled;
+        break;
+      case 'f':
+        document.body.requestFullscreen();
+        break;
+      case 'h':
+        // toggle help panel
+        const help = document.getElementById('controls-container');
+        help.style.display = help.style.display === 'none' ? 'block' : 'none';
+        break;
+      case 'r':
+        // reset camera to its original spot
+        camera.position.set(0, 15, 30);
+        controls.update();
+        break;
+    }
   }
 }
 
