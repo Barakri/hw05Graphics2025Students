@@ -265,6 +265,113 @@ function createHoop(left) {
 
 // Global basketball mesh reference
 let basketball;
+// Global shot power (0-100)
+let shotPower = 50;
+// --- Shooting physics state ---
+let ballVelocity = new THREE.Vector3(0, 0, 0);
+let ballInFlight = false;
+const GRAVITY = -9.8; // m/s^2 (scaled)
+let lastTime = performance.now();
+
+function getNearestHoopPos() {
+  // Returns THREE.Vector3 of the nearest hoop rim center
+  const leftHoopX = -15 + 1.2192 + 0.6;
+  const rightHoopX = 15 - 1.2192 - 0.6;
+  const hoopY = 3.05;
+  const hoopZ = 0;
+  const left = new THREE.Vector3(leftHoopX, hoopY, hoopZ);
+  const right = new THREE.Vector3(rightHoopX, hoopY, hoopZ);
+  const distLeft = basketball.position.distanceTo(left);
+  const distRight = basketball.position.distanceTo(right);
+  return distLeft < distRight ? left : right;
+}
+
+function updatePowerIndicator() {
+  // NBA2K-style HUD shot meter
+  const canvas = document.getElementById('shot-meter');
+  if (!canvas || !basketball) {
+    if (canvas) canvas.style.display = 'none';
+    return;
+  }
+  const ctx = canvas.getContext('2d');
+  // Project basketball position to screen
+  const vector = basketball.position.clone();
+  vector.project(camera);
+  const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+  // Position canvas centered above the ball
+  const offsetY = 35; // px above ball (smaller gauge)
+  canvas.style.left = `${x - canvas.width / 2}px`;
+  canvas.style.top = `${y - offsetY - canvas.height / 2}px`;
+  canvas.style.display = 'block';
+  // --- Dynamic sweetspot calculation ---
+  const leftHoopX = -15 + 1.2192 + 0.6;
+  const rightHoopX = 15 - 1.2192 - 0.6;
+  const hoopZ = 0;
+  const distLeft = Math.hypot(basketball.position.x - leftHoopX, basketball.position.z - hoopZ);
+  const distRight = Math.hypot(basketball.position.x - rightHoopX, basketball.position.z - hoopZ);
+  const dist = Math.min(distLeft, distRight);
+  const minDist = 0, maxDist = 15;
+  const minPower = 30, maxPower = 100;
+  let idealPower = minPower + (maxPower - minPower) * ((dist - minDist) / (maxDist - minDist));
+  idealPower = Math.max(minPower, Math.min(maxPower, idealPower));
+  const sweetWidth = 7;
+  const sweetStart = Math.max(0, idealPower - sweetWidth);
+  const sweetEnd = Math.min(100, idealPower + sweetWidth);
+  // --- Draw shot meter ---
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const radius = 30;
+  const startAngle = Math.PI * 0.8;
+  const endAngle = Math.PI * 2.2;
+  // Draw background arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, startAngle, endAngle, false);
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = '#444';
+  ctx.stroke();
+  // Draw fill arc (shot power)
+  const fillAngle = startAngle + (endAngle - startAngle) * (shotPower / 100);
+  // Check if in sweetspot
+  const inSweetspot = shotPower >= sweetStart && shotPower <= sweetEnd;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, startAngle, fillAngle, false);
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = inSweetspot ? '#FFD700' : '#00bfff'; // gold if perfect
+  if (inSweetspot) {
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 16;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Draw green zone (dynamic sweetspot)
+  const greenStart = startAngle + (endAngle - startAngle) * (sweetStart / 100);
+  const greenEnd = startAngle + (endAngle - startAngle) * (sweetEnd / 100);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, greenStart, greenEnd, false);
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = '#00ff00';
+  ctx.shadowColor = '#00ff00';
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Draw shot power text
+  ctx.font = 'bold 14px Arial';
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${shotPower}%`, cx, cy);
+  // Draw 'Perfect!' label if in sweetspot
+  if (inSweetspot) {
+    ctx.font = 'bold 13px Arial';
+    ctx.fillStyle = '#FFD700';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 10;
+    ctx.fillText('Perfect!', cx, cy - radius - 10);
+    ctx.shadowBlur = 0;
+  }
+}
 
 function createBasketball() {
   const basketballTexture = textureLoader.load('textures/basketball_texture.png');
@@ -359,7 +466,7 @@ function handleKeyDown(e) {
   const maxZ =  7.5 - 0.24;
 
   let moved = false;
-  if (basketball) {
+  if (basketball && !ballInFlight) {
     switch (e.key) {
       case 'ArrowLeft':
         basketball.position.x = Math.max(minX, basketball.position.x - moveStep);
@@ -377,23 +484,100 @@ function handleKeyDown(e) {
         basketball.position.z = Math.min(maxZ, basketball.position.z + moveStep);
         moved = true;
         break;
+      case 'w':
+      case 'W':
+        shotPower = Math.min(100, shotPower + 5);
+        updatePowerIndicator();
+        moved = true;
+        break;
+      case 's':
+      case 'S':
+        shotPower = Math.max(0, shotPower - 5);
+        updatePowerIndicator();
+        moved = true;
+        break;
+      case ' ': // Spacebar to shoot
+        if (!ballInFlight) {
+          // Calculate direction to nearest hoop
+          const hoopPos = getNearestHoopPos();
+          const ballPos = basketball.position.clone();
+          // --- Realistic arc calculation ---
+          // Set arc peak 1.5m above rim
+          const rimY = hoopPos.y;
+          const arcPeakY = rimY + 1.5;
+          // Horizontal distance and direction
+          const dx = hoopPos.x - ballPos.x;
+          const dz = hoopPos.z - ballPos.z;
+          const horizDist = Math.sqrt(dx*dx + dz*dz);
+          const horizDir = new THREE.Vector3(dx, 0, dz).normalize();
+          // Vertical distances
+          const y0 = ballPos.y;
+          const y1 = rimY;
+          // 1. Time to reach arc peak
+          const g = -GRAVITY;
+          const vy_up = Math.sqrt(2 * g * (arcPeakY - y0));
+          const t_up = vy_up / g;
+          // 2. Time to descend from peak to rim
+          const vy_down = Math.sqrt(2 * g * (arcPeakY - y1));
+          const t_down = vy_down / g;
+          const totalTime = t_up + t_down;
+          // 3. Horizontal velocity needed
+          const vxz = horizDist / totalTime;
+          // 4. Initial vertical velocity
+          const vy = vy_up;
+          // 5. Use shotPower to scale velocity if not in sweetspot
+          // --- Dynamic sweetspot calculation (same as in updatePowerIndicator) ---
+          const leftHoopX = -15 + 1.2192 + 0.6;
+          const rightHoopX = 15 - 1.2192 - 0.6;
+          const hoopZ = 0;
+          const distLeft = Math.hypot(ballPos.x - leftHoopX, ballPos.z - hoopZ);
+          const distRight = Math.hypot(ballPos.x - rightHoopX, ballPos.z - hoopZ);
+          const dist = Math.min(distLeft, distRight);
+          const minDist = 0, maxDist = 15;
+          const minPower = 30, maxPower = 100;
+          let idealPower = minPower + (maxPower - minPower) * ((dist - minDist) / (maxDist - minDist));
+          idealPower = Math.max(minPower, Math.min(maxPower, idealPower));
+          const sweetWidth = 7;
+          const sweetStart = Math.max(0, idealPower - sweetWidth);
+          const sweetEnd = Math.min(100, idealPower + sweetWidth);
+          let scale = 1;
+          if (shotPower < sweetStart) {
+            // Undershoot: scale down
+            scale = 0.85 + 0.15 * (shotPower / sweetStart);
+          } else if (shotPower > sweetEnd) {
+            // Overshoot: scale up
+            scale = 1 + 0.5 * ((shotPower - sweetEnd) / (100 - sweetEnd));
+          }
+          // Set velocity
+          ballVelocity = new THREE.Vector3(
+            horizDir.x * vxz * scale,
+            vy * scale,
+            horizDir.z * vxz * scale
+          );
+          ballInFlight = true;
+        }
+        moved = true;
     }
   }
 
   if (!moved) {
     switch (e.key.toLowerCase()) {
       case 'o':
+      case 'O':
         isOrbitEnabled = !isOrbitEnabled;
         break;
       case 'f':
+      case 'F':
         document.body.requestFullscreen();
         break;
       case 'h':
+      case 'H':
         // toggle help panel
         const help = document.getElementById('controls-container');
         help.style.display = help.style.display === 'none' ? 'block' : 'none';
         break;
       case 'r':
+      case 'R':
         // reset camera to its original spot
         camera.position.set(0, 15, 30);
         controls.update();
@@ -411,7 +595,30 @@ function animate() {
   // Update controls
   controls.enabled = isOrbitEnabled;
   controls.update();
-  
+
+  // --- Ball physics ---
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000; // seconds
+  lastTime = now;
+  if (ballInFlight && basketball) {
+    // Apply gravity
+    ballVelocity.y += GRAVITY * dt;
+    // Update position
+    basketball.position.x += ballVelocity.x * dt;
+    basketball.position.y += ballVelocity.y * dt;
+    basketball.position.z += ballVelocity.z * dt;
+    // Stop at ground
+    const ballRadius = 0.24;
+    const groundY = ballRadius + EPSILON;
+    if (basketball.position.y <= groundY) {
+      basketball.position.y = groundY;
+      ballInFlight = false;
+      ballVelocity.set(0, 0, 0);
+    }
+  }
+
+  // Update power gauge position/scale
+  updatePowerIndicator();
   renderer.render(scene, camera);
 }
 
