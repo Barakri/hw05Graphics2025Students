@@ -272,6 +272,32 @@ let ballVelocity = new THREE.Vector3(0, 0, 0);
 let ballInFlight = false;
 const GRAVITY = -9.8; // m/s^2 (scaled)
 let lastTime = performance.now();
+// --- Shot made state ---
+let shotMade = false;
+let shotMadeTimeout = null;
+let prevBallY = null;
+function showShotMadeMessage() {
+  let msg = document.getElementById('shot-made-message');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.id = 'shot-made-message';
+    msg.style.position = 'fixed';
+    msg.style.left = '50%';
+    msg.style.top = '20%';
+    msg.style.transform = 'translate(-50%, 0)';
+    msg.style.fontSize = '2.5em';
+    msg.style.fontWeight = 'bold';
+    msg.style.color = '#FFD700';
+    msg.style.textShadow = '2px 2px 8px #000, 0 0 16px #FFD700';
+    msg.style.zIndex = 1000;
+    msg.style.display = 'none';
+    document.body.appendChild(msg);
+  }
+  msg.textContent = 'SHOT MADE!';
+  msg.style.display = 'block';
+  clearTimeout(shotMadeTimeout);
+  shotMadeTimeout = setTimeout(() => { msg.style.display = 'none'; }, 1200);
+}
 
 function getNearestHoopPos() {
   // Returns THREE.Vector3 of the nearest hoop rim center
@@ -455,6 +481,11 @@ function onWindowResize() {
 const controls = new OrbitControls(camera, renderer.domElement);
 let isOrbitEnabled = true;
 
+// --- Ball rotation state ---
+let ballRotationAxis = new THREE.Vector3(0, 0, 0);
+let ballRotationSpeed = 0;
+const FLIGHT_SPIN_FACTOR = 0.3; // Reduce spin in air
+
 // Handle key events
 function handleKeyDown(e) {
   // Movement step size
@@ -467,21 +498,26 @@ function handleKeyDown(e) {
 
   let moved = false;
   if (basketball && !ballInFlight) {
+    let moveVec = new THREE.Vector3(0, 0, 0);
     switch (e.key) {
       case 'ArrowLeft':
         basketball.position.x = Math.max(minX, basketball.position.x - moveStep);
+        moveVec.set(-moveStep, 0, 0);
         moved = true;
         break;
       case 'ArrowRight':
         basketball.position.x = Math.min(maxX, basketball.position.x + moveStep);
+        moveVec.set(moveStep, 0, 0);
         moved = true;
         break;
       case 'ArrowUp':
         basketball.position.z = Math.max(minZ, basketball.position.z - moveStep);
+        moveVec.set(0, 0, -moveStep);
         moved = true;
         break;
       case 'ArrowDown':
         basketball.position.z = Math.min(maxZ, basketball.position.z + moveStep);
+        moveVec.set(0, 0, moveStep);
         moved = true;
         break;
       case 'w':
@@ -558,6 +594,14 @@ function handleKeyDown(e) {
         }
         moved = true;
     }
+    // Apply rotation for ground movement
+    if (moved && moveVec.length() > 0) {
+      const up = new THREE.Vector3(0, 1, 0);
+      const axis = new THREE.Vector3().crossVectors(moveVec, up).normalize();
+      const ballRadius = 0.24;
+      const angle = moveVec.length() / ballRadius;
+      basketball.rotateOnAxis(axis, angle);
+    }
   }
 
   if (!moved) {
@@ -629,6 +673,26 @@ function animate() {
         ballInFlight = false;
         ballVelocity.set(0, 0, 0);
       }
+    }
+  }
+
+  // --- Ball rotation animation (Phase 5) ---
+  if (basketball && ballInFlight) {
+    // Compute velocity vector (direction and speed)
+    const velocity = ballVelocity.clone();
+    const speed = velocity.length();
+    if (speed > 0.01) {
+      // Axis: perpendicular to velocity and up (Y) axis
+      const up = new THREE.Vector3(0, 1, 0);
+      const axis = new THREE.Vector3().crossVectors(velocity, up).normalize();
+      // Angle: arc length = radius * angle => angle = distance / radius
+      const ballRadius = 0.24;
+      const angle = speed * dt / ballRadius * FLIGHT_SPIN_FACTOR;
+      // Apply rotation (local axis)
+      basketball.rotateOnAxis(axis, angle);
+      // Store for smoothness (optional)
+      ballRotationAxis.copy(axis);
+      ballRotationSpeed = angle / dt;
     }
   }
 
