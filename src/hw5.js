@@ -272,6 +272,70 @@ let ballVelocity = new THREE.Vector3(0, 0, 0);
 let ballInFlight = false;
 const GRAVITY = -9.8; // m/s^2 (scaled)
 let lastTime = performance.now();
+// --- Scoring system state ---
+let teamAScore = 0;
+let teamBScore = 0;
+let shotAttempts = 0;
+let shotsMade = 0;
+// --- Store shot power and sweetspot at launch ---
+let lastShotPower = 50;
+let lastSweetStart = 0;
+let lastSweetEnd = 100;
+let shotPending = false;
+let passedArcPeak = false;
+// Add global to store last shot position
+let lastShotPos = null;
+function updateScoreHUD() {
+  // --- Stats HUD (top left) ---
+  let statsHud = document.getElementById('stats-hud');
+  if (!statsHud) {
+    statsHud = document.createElement('div');
+    statsHud.id = 'stats-hud';
+    document.body.appendChild(statsHud);
+  }
+  const pct = shotAttempts > 0 ? Math.round((shotsMade / shotAttempts) * 100) : 0;
+  statsHud.innerHTML = `
+    <b>Attempts:</b> ${shotAttempts}<br>
+    <b>Made:</b> ${shotsMade}<br>
+    <b>Accuracy:</b> ${pct}%
+  `;
+
+  // --- Scoreboard (top center, already in HTML) ---
+  const teamA = document.getElementById('team-a-score');
+  const teamB = document.getElementById('team-b-score');
+  const scoreboard = document.getElementById('scoreboard-container');
+  if (teamA && teamB && scoreboard) {
+    // Check if score changed for flash
+    if (parseInt(teamA.textContent) !== teamAScore || parseInt(teamB.textContent) !== teamBScore) {
+      scoreboard.classList.remove('score-flash');
+      void scoreboard.offsetWidth; // force reflow for animation
+      scoreboard.classList.add('score-flash');
+    }
+    teamA.textContent = teamAScore;
+    teamB.textContent = teamBScore;
+  }
+}
+function showMissedShotMessage() {
+  let msg = document.getElementById('missed-shot-message');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.id = 'missed-shot-message';
+    document.body.appendChild(msg);
+  }
+  msg.textContent = 'MISSED SHOT';
+  msg.style.display = 'block';
+  msg.style.opacity = '1';
+  msg.animate([
+    { transform: 'translate(-50%, 0) scale(1)' },
+    { transform: 'translate(-50%, 0) scale(1.25)' },
+    { transform: 'translate(-50%, 0) scale(1)' }
+  ], { duration: 1200, easing: 'cubic-bezier(.5,2,.5,1)' });
+  setTimeout(() => {
+    msg.style.transition = 'opacity 0.7s';
+    msg.style.opacity = '0';
+    setTimeout(() => { msg.style.display = 'none'; msg.style.transition = ''; }, 700);
+  }, 1200);
+}
 // --- Shot made state ---
 let shotMade = false;
 let shotMadeTimeout = null;
@@ -281,22 +345,18 @@ function showShotMadeMessage() {
   if (!msg) {
     msg = document.createElement('div');
     msg.id = 'shot-made-message';
-    msg.style.position = 'fixed';
-    msg.style.left = '50%';
-    msg.style.top = '20%';
-    msg.style.transform = 'translate(-50%, 0)';
-    msg.style.fontSize = '2.5em';
-    msg.style.fontWeight = 'bold';
-    msg.style.color = '#FFD700';
-    msg.style.textShadow = '2px 2px 8px #000, 0 0 16px #FFD700';
-    msg.style.zIndex = 1000;
-    msg.style.display = 'none';
     document.body.appendChild(msg);
   }
   msg.textContent = 'SHOT MADE!';
   msg.style.display = 'block';
+  msg.animate([
+    { transform: 'translate(-50%, 0) scale(1)' },
+    { transform: 'translate(-50%, 0) scale(1.25)' },
+    { transform: 'translate(-50%, 0) scale(1)' }
+  ], { duration: 1200, easing: 'cubic-bezier(.5,2,.5,1)' });
   clearTimeout(shotMadeTimeout);
   shotMadeTimeout = setTimeout(() => { msg.style.display = 'none'; }, 1200);
+  triggerParticleEffect();
 }
 
 function getNearestHoopPos() {
@@ -534,13 +594,18 @@ function handleKeyDown(e) {
         break;
       case ' ': // Spacebar to shoot
         if (!ballInFlight) {
+          shotAttempts++;
+          updateScoreHUD();
+          shotPending = true;
+          passedArcPeak = false;
           // Calculate direction to nearest hoop
           const hoopPos = getNearestHoopPos();
           const ballPos = basketball.position.clone();
+          lastShotPos = ballPos.clone(); // Store shot position for 3-point logic
           // --- Realistic arc calculation ---
-          // Set arc peak 1.5m above rim
+          // Set arc peak 2.5m above rim (higher arc)
           const rimY = hoopPos.y;
-          const arcPeakY = rimY + 1.5;
+          const arcPeakY = rimY + 2.5;
           // Horizontal distance and direction
           const dx = hoopPos.x - ballPos.x;
           const dz = hoopPos.z - ballPos.z;
@@ -584,6 +649,10 @@ function handleKeyDown(e) {
             // Overshoot: scale up
             scale = 1 + 0.5 * ((shotPower - sweetEnd) / (100 - sweetEnd));
           }
+          // Store shot power and sweetspot for this attempt
+          lastShotPower = shotPower;
+          lastSweetStart = sweetStart;
+          lastSweetEnd = sweetEnd;
           // Set velocity
           ballVelocity = new THREE.Vector3(
             horizDir.x * vxz * scale,
@@ -644,6 +713,8 @@ function animate() {
   const now = performance.now();
   const dt = (now - lastTime) / 1000; // seconds
   lastTime = now;
+  // Track previous Y velocity before updating
+  let prevVy = ballVelocity.y;
   if (ballInFlight && basketball) {
     // Apply gravity
     ballVelocity.y += GRAVITY * dt;
@@ -663,16 +734,18 @@ function animate() {
     const groundY = ballRadius + EPSILON;
     if (basketball.position.y <= groundY) {
       basketball.position.y = groundY;
-      // Bounce with energy loss
-      if (Math.abs(ballVelocity.y) > 0.8) { // threshold for bounce
-        ballVelocity.y = -ballVelocity.y * 0.7; // lose 30% energy
-        ballVelocity.x *= 0.95; // lose some horizontal energy
+      if (Math.abs(ballVelocity.y) > 0.8) {
+        ballVelocity.y = -ballVelocity.y * 0.7;
+        ballVelocity.x *= 0.95;
         ballVelocity.z *= 0.95;
       } else {
-        // Ball comes to rest
         ballInFlight = false;
         ballVelocity.set(0, 0, 0);
       }
+    }
+    // Track if ball has passed arc peak (starts descending)
+    if (!passedArcPeak && prevVy > 0 && ballVelocity.y <= 0) {
+      passedArcPeak = true;
     }
   }
 
@@ -696,9 +769,124 @@ function animate() {
     }
   }
 
+  // --- Shot made detection (crosses rim from above) ---
+  if (ballInFlight && basketball) {
+    if (prevBallY === null) prevBallY = basketball.position.y;
+    const leftHoopX = -15 + 1.2192 + 0.6;
+    const rightHoopX = 15 - 1.2192 - 0.6;
+    const rimY = 3.05;
+    const rimZ = 0;
+    const rimRadius = 0.225;
+    const ballXZ = new THREE.Vector2(basketball.position.x, basketball.position.z);
+    const leftRim = new THREE.Vector2(leftHoopX, rimZ);
+    const rightRim = new THREE.Vector2(rightHoopX, rimZ);
+    const rimCenter = ballXZ.distanceTo(leftRim) < ballXZ.distanceTo(rightRim) ? leftRim : rightRim;
+    const rimDistNow = ballXZ.distanceTo(rimCenter);
+    // Loosened tolerance for made shot
+    const madeThreshold = rimRadius * 1.1;
+    if (!shotMade && prevBallY > rimY && basketball.position.y <= rimY) {
+      console.log('[SHOT CHECK] rimDistNow:', rimDistNow, 'threshold:', madeThreshold, 'ballY:', basketball.position.y, 'prevY:', prevBallY, 'shotPower:', lastShotPower, 'sweet:', lastSweetStart, lastSweetEnd);
+      if (rimDistNow < madeThreshold && lastShotPower >= lastSweetStart && lastShotPower <= lastSweetEnd) {
+        shotMade = true;
+        shotsMade++;
+        // Determine which team gets the point
+        // Use the ball position at shot time (ballPos) and rim center
+        const shotPos = lastShotPos ? lastShotPos.clone() : basketball.position.clone();
+        shotPos.y = 0;
+        const rim3D = new THREE.Vector3(rimCenter.x, 0, rimCenter.y || rimCenter.z || 0);
+        const distToRim = shotPos.distanceTo(rim3D);
+        const isThree = distToRim > 6.75;
+        const points = isThree ? 3 : 2;
+        if (rimCenter.x < 0) {
+          teamBScore += points;
+        } else {
+          teamAScore += points;
+        }
+        updateScoreHUD();
+        showShotMadeMessage();
+      }
+    }
+    if (basketball.position.y > rimY + 0.5) {
+      shotMade = false;
+    }
+    prevBallY = basketball.position.y;
+  }
+
+  // --- Missed shot check: ball below rim after arc peak, not made ---
+  const rimY = 3.05;
+  if (shotPending && passedArcPeak && basketball.position.y < rimY && !shotMade) {
+    showMissedShotMessage();
+    shotPending = false;
+    passedArcPeak = false;
+    prevBallY = null;
+  }
+
   // Update power gauge position/scale
   updatePowerIndicator();
   renderer.render(scene, camera);
 }
 
 animate();
+
+// --- Particle effect for made shot ---
+function triggerParticleEffect() {
+  const canvas = document.getElementById('particle-canvas');
+  if (!canvas) return;
+  // Set canvas size to window
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  canvas.style.display = 'block';
+  const ctx = canvas.getContext('2d');
+  // Find rim position in 3D, project to screen
+  const hoopPos = getNearestHoopPos();
+  const rimWorld = hoopPos.clone();
+  // Offset slightly downward for visual effect
+  rimWorld.y -= 0.1;
+  const rimScreen = rimWorld.project(camera);
+  const x = (rimScreen.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-rimScreen.y * 0.5 + 0.5) * window.innerHeight;
+  // Particle parameters
+  const N = 36;
+  const particles = [];
+  for (let i = 0; i < N; ++i) {
+    const angle = (2 * Math.PI * i) / N + Math.random() * 0.2;
+    const speed = 180 + Math.random() * 80;
+    const color = `hsl(${Math.floor(Math.random()*360)},90%,60%)`;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color,
+      alpha: 1
+    });
+  }
+  let start = null;
+  function animateParticles(ts) {
+    if (!start) start = ts;
+    const elapsed = (ts - start) / 1000;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of particles) {
+      // Gravity and fade
+      p.x += p.vx * 0.016;
+      p.y += p.vy * 0.016;
+      p.vy += 220 * 0.016;
+      p.alpha = Math.max(0, 1 - elapsed * 1.2);
+      ctx.globalAlpha = p.alpha;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, 2 * Math.PI);
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    if (elapsed < 1) {
+      requestAnimationFrame(animateParticles);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.style.display = 'none';
+    }
+  }
+  requestAnimationFrame(animateParticles);
+}
