@@ -277,6 +277,8 @@ let teamAScore = 0;
 let teamBScore = 0;
 let shotAttempts = 0;
 let shotsMade = 0;
+let threePA = 0;
+let threePM = 0;
 // --- Store shot power and sweetspot at launch ---
 let lastShotPower = 50;
 let lastSweetStart = 0;
@@ -285,6 +287,7 @@ let shotPending = false;
 let passedArcPeak = false;
 // Add global to store last shot position
 let lastShotPos = null;
+let lastShotRim = null;
 function updateScoreHUD() {
   // --- Stats HUD (top left) ---
   let statsHud = document.getElementById('stats-hud');
@@ -294,10 +297,14 @@ function updateScoreHUD() {
     document.body.appendChild(statsHud);
   }
   const pct = shotAttempts > 0 ? Math.round((shotsMade / shotAttempts) * 100) : 0;
+  const threePct = threePA > 0 ? Math.round((threePM / threePA) * 100) : 0;
   statsHud.innerHTML = `
-    <b>Attempts:</b> ${shotAttempts}<br>
-    <b>Made:</b> ${shotsMade}<br>
-    <b>Accuracy:</b> ${pct}%
+    <b>FGA:</b> ${shotAttempts}<br>
+    <b>FGM:</b> ${shotsMade}<br>
+    <b>FG%:</b> ${pct}%<br>
+    <b>3PA:</b> ${threePA}<br>
+    <b>3PM:</b> ${threePM}<br>
+    <b>3P%:</b> ${threePct}%
   `;
 
   // --- Scoreboard (top center, already in HTML) ---
@@ -602,6 +609,15 @@ function handleKeyDown(e) {
           const hoopPos = getNearestHoopPos();
           const ballPos = basketball.position.clone();
           lastShotPos = ballPos.clone(); // Store shot position for 3-point logic
+          lastShotRim = new THREE.Vector3(hoopPos.x, 0, hoopPos.z);
+
+          const shotPos = lastShotPos.clone(); 
+          shotPos.y = 0;
+          const distToRim = shotPos.distanceTo(lastShotRim);
+          const isThree = distToRim > 6.75;
+          if (isThree) {
+            threePA++;
+          }
           // --- Realistic arc calculation ---
           // Set arc peak 2.5m above rim (higher arc)
           const rimY = hoopPos.y;
@@ -784,19 +800,26 @@ function animate() {
     const rimDistNow = ballXZ.distanceTo(rimCenter);
     // Loosened tolerance for made shot
     const madeThreshold = rimRadius * 1.1;
+
+    // Use the ball position at shot time (ballPos) and rim center
+    const shotPos = lastShotPos ? lastShotPos.clone() : basketball.position.clone();
+    shotPos.y = 0;
+    const rim3D = new THREE.Vector3(rimCenter.x, 0, rimCenter.y || rimCenter.z || 0);
+    const distToRim = shotPos.distanceTo(rim3D);
+    const isThree = distToRim > 6.75;
+
+
     if (!shotMade && prevBallY > rimY && basketball.position.y <= rimY) {
       console.log('[SHOT CHECK] rimDistNow:', rimDistNow, 'threshold:', madeThreshold, 'ballY:', basketball.position.y, 'prevY:', prevBallY, 'shotPower:', lastShotPower, 'sweet:', lastSweetStart, lastSweetEnd);
       if (rimDistNow < madeThreshold && lastShotPower >= lastSweetStart && lastShotPower <= lastSweetEnd) {
         shotMade = true;
         shotsMade++;
         // Determine which team gets the point
-        // Use the ball position at shot time (ballPos) and rim center
-        const shotPos = lastShotPos ? lastShotPos.clone() : basketball.position.clone();
-        shotPos.y = 0;
-        const rim3D = new THREE.Vector3(rimCenter.x, 0, rimCenter.y || rimCenter.z || 0);
-        const distToRim = shotPos.distanceTo(rim3D);
-        const isThree = distToRim > 6.75;
         const points = isThree ? 3 : 2;
+
+        // Update 3PM
+        threePM = isThree ? threePM + 1 : threePM;
+
         if (rimCenter.x < 0) {
           teamBScore += points;
         } else {
