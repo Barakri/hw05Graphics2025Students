@@ -705,11 +705,18 @@ function handleKeyDown(e) {
         const help = document.getElementById('controls-container');
         help.style.display = help.style.display === 'none' ? 'block' : 'none';
         break;
-      case 'r':
-      case 'R':
+      case 'c':
+      case 'C':
         // reset camera to its original spot
         camera.position.set(0, 15, 30);
         controls.update();
+        break;
+      case 'r':
+      case 'R':
+        // reset basketball to original position
+        basketball.position.set(0, 0.24 + EPSILON, 0);
+        ballInFlight = false;
+        ballVelocity.set(0, 0, 0);
         break;
     }
   }
