@@ -251,11 +251,11 @@ function createHoop(left) {
   pole.position.set(xPosition + (xPosition > 0 ? 1 : -1), 1.525, 0);
   hoopGroup.add(pole);
 
-  const armGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.7125);
+  const armGeometry = new THREE.BoxGeometry(0.1, 0.1, 1.5);
   const arm = new THREE.Mesh(armGeometry, poleMaterial);
   arm.rotation.y = Math.PI / 2;
   arm.position.set(
-    xPosition ,//+ (xPosition > 0 ? 0.6 : -0.6), 
+    xPosition + (xPosition > 0 ? 0.5 : -0.5), 
     3.05, 
     0
   );
@@ -866,7 +866,7 @@ function animate() {
 
     if (!shotMade && prevBallY > rimY && basketball.position.y <= rimY) {
       console.log('[SHOT CHECK] rimDistNow:', rimDistNow, 'threshold:', madeThreshold, 'ballY:', basketball.position.y, 'prevY:', prevBallY, 'shotPower:', lastShotPower, 'sweet:', lastSweetStart, lastSweetEnd);
-      if (rimDistNow < madeThreshold) {// && lastShotPower >= lastSweetStart && lastShotPower <= lastSweetEnd) {
+      if (rimDistNow < madeThreshold && lastShotPower >= lastSweetStart && lastShotPower <= lastSweetEnd) {
         shotMade = true;
         shotsMade++;
         // Determine which team gets the point
