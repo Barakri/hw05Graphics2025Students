@@ -469,7 +469,7 @@ function updatePowerIndicator() {
 function createBasketball() {
   const basketballTexture = textureLoader.load('textures/basketball_texture.png');
 
-  const ballRadius = 0.24;
+  const ballRadius = 0.12;
   const ballGeometry = new THREE.SphereGeometry(ballRadius, 64, 64);
   const ballMaterial = new THREE.MeshPhongMaterial({
     map: basketballTexture,
@@ -558,10 +558,10 @@ function handleKeyDown(e) {
   // Movement step size
   const moveStep = 0.3;
   // Court boundaries (court is 30x15, so halfX=15, halfZ=7.5, but keep ball inside)
-  const minX = -15 + 0.24; // ball radius
-  const maxX =  15 - 0.24;
-  const minZ = -7.5 + 0.24;
-  const maxZ =  7.5 - 0.24;
+  const minX = -15 + 0.12; // ball radius
+  const maxX =  15 - 0.12;
+  const minZ = -7.5 + 0.12;
+  const maxZ =  7.5 - 0.12;
 
   let moved = false;
   if (basketball && !ballInFlight) {
@@ -683,7 +683,7 @@ function handleKeyDown(e) {
     if (moved && moveVec.length() > 0) {
       const up = new THREE.Vector3(0, 1, 0);
       const axis = new THREE.Vector3().crossVectors(moveVec, up).normalize();
-      const ballRadius = 0.24;
+      const ballRadius = 0.12;
       const angle = moveVec.length() / ballRadius;
       basketball.rotateOnAxis(axis, angle);
     }
@@ -714,7 +714,7 @@ function handleKeyDown(e) {
       case 'r':
       case 'R':
         // reset basketball to original position
-        basketball.position.set(0, 0.24 + EPSILON, 0);
+        basketball.position.set(0, 0.12 + EPSILON, 0);
         ballInFlight = false;
         ballVelocity.set(0, 0, 0);
         break;
@@ -746,7 +746,7 @@ function animate() {
     basketball.position.y += ballVelocity.y * dt;
     basketball.position.z += ballVelocity.z * dt;
     // Clamp to court boundaries
-    const ballRadius = 0.24;
+    const ballRadius = 0.12;
     const minX = -15 + ballRadius;
     const maxX =  15 - ballRadius;
     const minZ = -7.5 + ballRadius;
@@ -770,6 +770,54 @@ function animate() {
     if (!passedArcPeak && prevVy > 0 && ballVelocity.y <= 0) {
       passedArcPeak = true;
     }
+
+    // Rim collision
+    const leftHoopX = -15 + 1.2192 + 0.6;
+    const rightHoopX = 15 - 1.2192 - 0.6;
+    const rimY = 3.05;
+    const rimZ = 0;
+    const rimRadius = 0.225;
+    const leftRim = new THREE.Vector3(leftHoopX, rimY, rimZ);
+    const rightRim = new THREE.Vector3(rightHoopX, rimY, rimZ);
+
+    for (const rim of [leftRim, rightRim]) {
+      const toRim = basketball.position.clone().sub(rim);
+      const dist = toRim.length();
+      const sumRadiuses = rimRadius + ballRadius;
+
+      if (Math.abs(basketball.position.y - rimY) <= ballRadius && Math.abs(dist - rimRadius) <= ballRadius) {
+        const overlap = sumRadiuses - dist;
+        const correction = toRim.normalize().multiplyScalar(overlap);
+        basketball.position.add(correction);
+        const normal = toRim.normalize();
+        const velocityAlongNormal = ballVelocity.dot(normal);
+        if (velocityAlongNormal < 0) {
+          ballVelocity.sub(normal.multiplyScalar(1.8 * velocityAlongNormal)); // bounce + dampen
+        }
+      }
+    }
+
+    // BackBoard collisions
+    const leftBackboard = new THREE.Vector3(-15 + 1.2192, 3.05, 0);
+    const rightBackboard = new THREE.Vector3(15 - 1.2192, 3.05, 0);
+    const backBoardH = 1.05;
+    const backBoardW = 1.8;
+    const backBoardD = 0.1;
+
+    for (const bb of [leftBackboard, rightBackboard]) {
+      const withinHeight = Math.abs(basketball.position.y - bb.y) <= backBoardH / 2 + ballRadius;
+      const withinWidth = Math.abs(basketball.position.z - bb.z) <= backBoardW / 2 + ballRadius;
+      const withinDepth = Math.abs(basketball.position.x - bb.x) <= backBoardD / 2 + ballRadius;
+
+      if (withinDepth && withinHeight && withinWidth) {
+        // hit
+        // this is a flat surface so the normal is (+-1, 0, 0)
+        ballVelocity.x *= -0.6;
+        ballVelocity.y *= 0.9;
+        ballVelocity.z *= 0.9;
+      }
+    }
+
   }
 
   // --- Ball rotation animation (Phase 5) ---
@@ -782,7 +830,7 @@ function animate() {
       const up = new THREE.Vector3(0, 1, 0);
       const axis = new THREE.Vector3().crossVectors(velocity, up).normalize();
       // Angle: arc length = radius * angle => angle = distance / radius
-      const ballRadius = 0.24;
+      const ballRadius = 0.12;
       const angle = speed * dt / ballRadius * FLIGHT_SPIN_FACTOR;
       // Apply rotation (local axis)
       basketball.rotateOnAxis(axis, angle);
